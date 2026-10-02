@@ -36,6 +36,15 @@ export async function POST(req) {
 
   const db = getSupabase();
 
+  const { data: banido } = await db
+    .from("banned_users")
+    .select("discord_id")
+    .eq("discord_id", discord_id)
+    .maybeSingle();
+  if (banido) {
+    return NextResponse.json({ error: "Usuário banido." }, { status: 403 });
+  }
+
   if (webhook_url) {
     const { error } = await db
       .from("members")

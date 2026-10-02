@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSupabase } from "../../../../../lib/db";
 
 export async function GET(req) {
   const { searchParams, origin } = new URL(req.url);
@@ -42,6 +43,14 @@ export async function GET(req) {
     });
     if (!userRes.ok) return voltar("erro");
     const user = await userRes.json();
+
+    // 2.5 Banido do site? Não deixa verificar.
+    const { data: banido } = await getSupabase()
+      .from("banned_users")
+      .select("discord_id")
+      .eq("discord_id", user.id)
+      .maybeSingle();
+    if (banido) return voltar("banido");
 
     // 3. Pergunta pro bot se essa pessoa está no servidor
     const membroRes = await fetch(`${botApiUrl}/membro/${user.id}`, {

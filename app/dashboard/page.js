@@ -8,9 +8,13 @@ export default function DashboardPage() {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState("");
+  const [banned, setBanned] = useState([]);
+  const [banId, setBanId] = useState("");
+  const [banReason, setBanReason] = useState("");
 
   useEffect(() => {
     loadMembers();
+    loadBanned();
   }, []);
 
   async function loadMembers() {
@@ -47,6 +51,49 @@ export default function DashboardPage() {
     await fetch(`/api/members/${member.id}`, { method: "DELETE" });
   }
 
+  async function loadBanned() {
+    try {
+      const res = await fetch("/api/banned");
+      const data = await res.json();
+      if (res.ok) setBanned(data.banned);
+    } catch {}
+  }
+
+  async function banUser(discord_id, username, reason) {
+    const res = await fetch("/api/banned", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discord_id, username, reason }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Erro ao banir.");
+      return;
+    }
+    setStatus("Banido do site.");
+    await Promise.all([loadBanned(), loadMembers()]);
+  }
+
+  async function banMember(member) {
+    const reason = prompt(`Banir ${member.username} do site? Motivo (opcional):`);
+    if (reason === null) return;
+    await banUser(member.discord_id, member.username, reason);
+  }
+
+  async function banById() {
+    const id = banId.trim();
+    if (!id) return;
+    await banUser(id, null, banReason.trim());
+    setBanId("");
+    setBanReason("");
+  }
+
+  async function unban(b) {
+    if (!confirm(`Desbanir ${b.username || b.discord_id}?`)) return;
+    setBanned((prev) => prev.filter((x) => x.discord_id !== b.discord_id));
+    await fetch(`/api/banned/${b.discord_id}`, { method: "DELETE" });
+  }
+
   async function handleSend() {
     if (!message.trim()) {
       setStatus("Escreva uma mensagem antes de enviar.");
@@ -78,7 +125,8 @@ export default function DashboardPage() {
     window.location.href = "/login";
   }
 
-  const activeCount = members.filter((m) => !m.excluded).length;
+  const bannedIds = new Set(banned.map((b) => b.discord_id));
+  const activeCount = members.filter((m) => !m.excluded && !bannedIds.has(m.discord_id)).length;
 
   return (
     <>
@@ -261,6 +309,27 @@ export default function DashboardPage() {
                       {m.excluded ? "Excluído do envio" : "Incluído no envio"}
                     </button>
 
+                    {bannedIds.has(m.discord_id) ? (
+                      <span style={{ fontSize: 11, color: "#ff6b6b", padding: "7px 10px" }}>
+                        BANIDO
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => banMember(m)}
+                        style={{
+                          fontSize: 11,
+                          padding: "7px 10px",
+                          borderRadius: 999,
+                          border: "1px solid #4a1010",
+                          background: "rgba(227,6,19,0.18)",
+                          color: "#ff6b6b",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Banir
+                      </button>
+                    )}
+
                     <button
                       onClick={() => removeMember(m)}
                       style={{
@@ -274,6 +343,107 @@ export default function DashboardPage() {
                       }}
                     >
                       Remover
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section style={{ marginTop: 32 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                marginBottom: 12,
+              }}
+            >
+              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Banidos do site</h2>
+              <span style={{ fontSize: 12, color: "var(--grey)" }}>{banned.length} total</span>
+            </div>
+
+            <div
+              style={{
+                background: "var(--panel)",
+                border: "1px solid var(--line)",
+                borderRadius: 14,
+                padding: 14,
+                marginBottom: 12,
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                value={banId}
+                onChange={(e) => setBanId(e.target.value)}
+                placeholder="ID do Discord"
+                style={banInput}
+              />
+              <input
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                placeholder="Motivo (opcional)"
+                style={{ ...banInput, flex: 2 }}
+              />
+              <button
+                onClick={banById}
+                style={{
+                  padding: "10px 16px",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  color: "#fff",
+                  cursor: "pointer",
+                  background: "linear-gradient(180deg, #ff3b3b, #e30613)",
+                }}
+              >
+                Banir
+              </button>
+            </div>
+
+            {banned.length === 0 ? (
+              <div style={{ color: "var(--grey)", fontSize: 13 }}>Ninguém banido.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {banned.map((b) => (
+                  <div
+                    key={b.discord_id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      background: "var(--panel-soft)",
+                      border: "1px solid var(--line)",
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>
+                        {b.username || "(sem nome)"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--grey)", fontFamily: "var(--mono)" }}>
+                        {b.discord_id}
+                        {b.reason ? ` • ${b.reason}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => unban(b)}
+                      style={{
+                        fontSize: 11,
+                        padding: "7px 10px",
+                        borderRadius: 999,
+                        border: "1px solid var(--line)",
+                        background: "transparent",
+                        color: "var(--grey)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Desbanir
                     </button>
                   </div>
                 ))}
@@ -294,4 +464,16 @@ const logoutBtn = {
   background: "transparent",
   color: "#9a8080",
   cursor: "pointer",
+};
+
+const banInput = {
+  flex: 1,
+  minWidth: 130,
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid #241010",
+  background: "#0a0a0a",
+  color: "#f5f5f5",
+  fontSize: 13,
+  outline: "none",
 };

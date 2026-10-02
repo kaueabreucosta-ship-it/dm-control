@@ -12,17 +12,30 @@ export async function POST(req) {
     return NextResponse.json({ error: "Mensagem vazia." }, { status: 400 });
   }
 
-  const botApiUrl = process.env.BOT_API_URL;
+  const botApiUrlRaw = process.env.BOT_API_URL;
   const botSecret = process.env.BOT_SHARED_SECRET;
-  if (!botApiUrl || !botSecret) {
+  if (!botApiUrlRaw || !botSecret) {
     return NextResponse.json(
       { error: "BOT_API_URL ou BOT_SHARED_SECRET não configurados." },
       { status: 500 }
     );
   }
 
+  let botApiUrl;
+  try {
+    const parsed = new URL(botApiUrlRaw.trim());
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('protocolo inválido');
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    botApiUrl = parsed.toString().replace(/\/$/, '');
+  } catch {
+    return NextResponse.json(
+      { error: "BOT_API_URL inválido. Use apenas a URL base do Zoe Bot, por exemplo https://zoe-bot-cbmm.onrender.com" },
+      { status: 500 }
+    );
+  }
+
   const db = getSupabase();
-  const { data: targets, error } = await db
+  const { data: allTargets, error } = await db
     .from("members")
     .select("discord_id, webhook_url")
     .eq("excluded", false);
@@ -30,6 +43,10 @@ export async function POST(req) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  const { data: bannedRows } = await db.from("banned_users").select("discord_id");
+  const bannedIds = new Set((bannedRows || []).map((b) => b.discord_id));
+  const targets = (allTargets || []).filter((t) => !bannedIds.has(t.discord_id));
   if (!targets || targets.length === 0) {
     return NextResponse.json({ error: "Nenhum membro para enviar." }, { status: 400 });
   }

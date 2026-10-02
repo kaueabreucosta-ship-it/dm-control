@@ -16,6 +16,10 @@ const MENSAGENS = {
     texto:
       "Abra as configurações de privacidade do Discord e permita mensagens diretas de membros do servidor, depois tente de novo.",
   },
+  banido: {
+    titulo: "Acesso bloqueado",
+    texto: "Sua conta foi banida e não pode ser verificada.",
+  },
   config: {
     titulo: "Verificação não configurada",
     texto:
