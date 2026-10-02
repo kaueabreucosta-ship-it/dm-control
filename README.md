@@ -61,4 +61,4 @@ Nunca coloque essas variáveis no GitHub — só na Vercel.
 
 No `/dashboard`, escreva a mensagem e clique em "Enviar DM pra todos". O site
 chama `POST <BOT_API_URL>/send-dm` e o bot manda a mensagem na DM (e no
-webhook, se tiver) de cada membro que não estiver marcado como "excluído".
+webhook, se tiver) de cada membro que não estiver marcado como "excluído".Deploy Vercel
