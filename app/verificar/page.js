@@ -1,3 +1,5 @@
+"use client";
+
 const MENSAGENS = {
   ok: {
     titulo: "Verificado! ✅",
@@ -6,7 +8,8 @@ const MENSAGENS = {
   },
   "nao-membro": {
     titulo: "Você não está no servidor",
-    texto: "Entre no servidor do Discord primeiro e depois tente verificar de novo.",
+    texto:
+      "Entre no servidor do Discord primeiro e depois tente verificar de novo.",
   },
   "dm-falhou": {
     titulo: "Não consegui te mandar DM",
@@ -15,11 +18,13 @@ const MENSAGENS = {
   },
   config: {
     titulo: "Verificação não configurada",
-    texto: "O administrador ainda não configurou a verificação neste site.",
+    texto:
+      "O administrador ainda não configurou a verificação neste site.",
   },
   erro: {
     titulo: "Algo deu errado",
-    texto: "Não consegui concluir a verificação. Tente novamente.",
+    texto:
+      "Não consegui concluir a verificação. Tente novamente.",
   },
 };
 
@@ -37,14 +42,24 @@ export default function VerificarPage({ searchParams }) {
           --red: #e30613;
           --grey: #9a8080;
           --white: #f5f5f5;
-          --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            sans-serif;
         }
-        * { box-sizing: border-box; }
-        html, body {
+
+        * {
+          box-sizing: border-box;
+        }
+
+        html,
+        body {
           margin: 0;
           min-height: 100%;
           background:
-            radial-gradient(ellipse 70% 50% at 20% -10%, #2a0808 0%, transparent 55%),
+            radial-gradient(
+              ellipse 70% 50% at 20% -10%,
+              #2a0808 0%,
+              transparent 55%
+            ),
             var(--bg);
           color: var(--white);
           font-family: var(--sans);
@@ -85,17 +100,37 @@ export default function VerificarPage({ searchParams }) {
 
           {info ? (
             <>
-              <h1 style={{ fontSize: 20, marginBottom: 10 }}>{info.titulo}</h1>
-              <p style={{ fontSize: 14, color: "var(--grey)", lineHeight: 1.6, marginBottom: 20 }}>
+              <h1 style={{ fontSize: 20, marginBottom: 10 }}>
+                {info.titulo}
+              </h1>
+
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "var(--grey)",
+                  lineHeight: 1.6,
+                  marginBottom: 20,
+                }}
+              >
                 {info.texto}
               </p>
             </>
           ) : (
             <>
-              <h1 style={{ fontSize: 20, marginBottom: 10 }}>Verificar no Discord</h1>
-              <p style={{ fontSize: 14, color: "var(--grey)", lineHeight: 1.6, marginBottom: 20 }}>
-                Confirme que você está no servidor pra liberar as mensagens e novidades no seu
-                privado.
+              <h1 style={{ fontSize: 20, marginBottom: 10 }}>
+                Verificar no Discord
+              </h1>
+
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "var(--grey)",
+                  lineHeight: 1.6,
+                  marginBottom: 20,
+                }}
+              >
+                Confirme que você está no servidor pra liberar as mensagens e
+                novidades no seu privado.
               </p>
             </>
           )}
@@ -121,4 +156,4 @@ export default function VerificarPage({ searchParams }) {
       </div>
     </>
   );
-}
+                  }
