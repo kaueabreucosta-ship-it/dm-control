@@ -11,6 +11,10 @@ export default function DashboardPage() {
   const [banned, setBanned] = useState([]);
   const [banId, setBanId] = useState("");
   const [banReason, setBanReason] = useState("");
+  const [banTarget, setBanTarget] = useState(null);
+  const [banTargetReason, setBanTargetReason] = useState("");
+  const [banOptIp, setBanOptIp] = useState(true);
+  const [banOptDevice, setBanOptDevice] = useState(true);
   const [inviteLink, setInviteLink] = useState("");
   const [pulling, setPulling] = useState(false);
   const [pullStatus, setPullStatus] = useState("");
@@ -64,31 +68,48 @@ export default function DashboardPage() {
     } catch {}
   }
 
-  async function banUser(discord_id, username, reason) {
+  async function banUser(discord_id, username, reason, ban_ip, ban_device) {
     const res = await fetch("/api/banned", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discord_id, username, reason }),
+      body: JSON.stringify({ discord_id, username, reason, ban_ip, ban_device }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setStatus(data.error || "Erro ao banir.");
       return;
     }
-    setStatus("Banido do site.");
+    const partes = ["ID"];
+    if (ban_ip) partes.push("IP");
+    if (ban_device) partes.push("hardware");
+    setStatus(`Banido do site (${partes.join(" + ")}).`);
     await Promise.all([loadBanned(), loadMembers()]);
   }
 
-  async function banMember(member) {
-    const reason = prompt(`Banir ${member.username} do site? Motivo (opcional):`);
-    if (reason === null) return;
-    await banUser(member.discord_id, member.username, reason);
+  // Abre o painel inline com as opções de banimento pro membro clicado.
+  function openBanPanel(member) {
+    setBanTarget(member);
+    setBanTargetReason("");
+    setBanOptIp(!!member.ip);
+    setBanOptDevice(!!member.device_label);
+  }
+
+  async function confirmBanTarget() {
+    if (!banTarget) return;
+    await banUser(
+      banTarget.discord_id,
+      banTarget.username,
+      banTargetReason.trim(),
+      banOptIp && !!banTarget.ip,
+      banOptDevice && !!banTarget.device_label
+    );
+    setBanTarget(null);
   }
 
   async function banById() {
     const id = banId.trim();
     if (!id) return;
-    await banUser(id, null, banReason.trim());
+    await banUser(id, null, banReason.trim(), false, false);
     setBanId("");
     setBanReason("");
   }
@@ -440,16 +461,16 @@ export default function DashboardPage() {
                     key={m.id}
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 12,
+                      flexDirection: "column",
+                      gap: 10,
                       background: "var(--panel-soft)",
                       border: "1px solid var(--line)",
                       borderRadius: 12,
                       padding: "12px 14px",
                       opacity: m.excluded ? 0.55 : 1,
-                      flexWrap: "wrap",
                     }}
                   >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 140 }}>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{m.username}</div>
                       <div
@@ -463,6 +484,12 @@ export default function DashboardPage() {
                         }}
                       >
                         {m.discord_id} • {m.has_token ? "autorizado" : "sem autorização"}{m.has_webhook ? " • webhook" : ""}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--grey)", fontFamily: "var(--mono)", marginTop: 2 }}>
+                        IP: {m.ip || "—"} • Hardware: {m.device_label || "—"}
+                        {m.proxy_flag ? (
+                          <span style={{ color: "#ffb347" }}> • possível VPN/proxy</span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -488,7 +515,7 @@ export default function DashboardPage() {
                       </span>
                     ) : (
                       <button
-                        onClick={() => banMember(m)}
+                        onClick={() => openBanPanel(m)}
                         style={{
                           fontSize: 11,
                           padding: "7px 10px",
@@ -517,6 +544,99 @@ export default function DashboardPage() {
                     >
                       Remover
                     </button>
+                  </div>
+
+                  {banTarget?.id === m.id && (
+                    <div
+                      style={{
+                        background: "var(--panel)",
+                        border: "1px solid #4a1010",
+                        borderRadius: 10,
+                        padding: 12,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: "var(--grey)" }}>
+                        Banir <b style={{ color: "var(--white)" }}>{m.username}</b> por:
+                      </div>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                        <input type="checkbox" checked readOnly /> ID do Discord (sempre)
+                      </label>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 12.5,
+                          opacity: m.ip ? 1 : 0.4,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={banOptIp}
+                          disabled={!m.ip}
+                          onChange={(e) => setBanOptIp(e.target.checked)}
+                        />
+                        IP {m.ip ? `(${m.ip})` : "(sem IP registrado ainda)"}
+                      </label>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 12.5,
+                          opacity: m.device_label ? 1 : 0.4,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={banOptDevice}
+                          disabled={!m.device_label}
+                          onChange={(e) => setBanOptDevice(e.target.checked)}
+                        />
+                        Hardware {m.device_label ? `(${m.device_label})` : "(sem hardware registrado ainda)"}
+                      </label>
+                      <input
+                        value={banTargetReason}
+                        onChange={(e) => setBanTargetReason(e.target.value)}
+                        placeholder="Motivo (opcional)"
+                        style={banInput}
+                      />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={confirmBanTarget}
+                          style={{
+                            padding: "8px 14px",
+                            border: "none",
+                            borderRadius: 10,
+                            fontWeight: 600,
+                            fontSize: 12.5,
+                            color: "#fff",
+                            cursor: "pointer",
+                            background: "linear-gradient(180deg, #ff3b3b, #e30613)",
+                          }}
+                        >
+                          Confirmar banimento
+                        </button>
+                        <button
+                          onClick={() => setBanTarget(null)}
+                          style={{
+                            padding: "8px 14px",
+                            border: "1px solid var(--line)",
+                            borderRadius: 10,
+                            fontSize: 12.5,
+                            color: "var(--grey)",
+                            background: "transparent",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   </div>
                 ))}
               </div>
@@ -603,6 +723,11 @@ export default function DashboardPage() {
                         {b.discord_id}
                         {b.reason ? ` • ${b.reason}` : ""}
                       </div>
+                      <div style={{ fontSize: 10.5, marginTop: 3, display: "flex", gap: 6 }}>
+                        <span style={badgeStyle}>ID</span>
+                        {b.ban_ip && <span style={badgeStyle}>IP</span>}
+                        {b.ban_device && <span style={badgeStyle}>Hardware</span>}
+                      </div>
                     </div>
                     <button
                       onClick={() => unban(b)}
@@ -649,4 +774,13 @@ const banInput = {
   color: "#f5f5f5",
   fontSize: 13,
   outline: "none",
+};
+
+const badgeStyle = {
+  padding: "2px 7px",
+  borderRadius: 999,
+  border: "1px solid #4a1010",
+  background: "rgba(227,6,19,0.15)",
+  color: "#ff8080",
+  fontFamily: "var(--mono)",
 };

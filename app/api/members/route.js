@@ -13,7 +13,9 @@ export async function GET() {
   const db = getSupabase();
   const { data, error } = await db
     .from("members")
-    .select("id, discord_id, username, webhook_url, refresh_token, excluded, verified_at")
+    .select(
+      "id, discord_id, username, webhook_url, refresh_token, excluded, verified_at, ip, device_label, proxy_flag, proxy_score"
+    )
     .order("verified_at", { ascending: false });
 
   if (error) {
