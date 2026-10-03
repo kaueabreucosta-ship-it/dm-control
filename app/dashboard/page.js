@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function DashboardPage() {
   const [members, setMembers] = useState([]);
@@ -11,6 +11,11 @@ export default function DashboardPage() {
   const [banned, setBanned] = useState([]);
   const [banId, setBanId] = useState("");
   const [banReason, setBanReason] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [pulling, setPulling] = useState(false);
+  const [pullStatus, setPullStatus] = useState("");
+  const [pullStats, setPullStats] = useState(null);
+  const stopPull = useRef(false);
 
   useEffect(() => {
     loadMembers();
@@ -111,7 +116,7 @@ export default function DashboardPage() {
       if (!res.ok) {
         setStatus(data.error || "Erro ao enviar.");
       } else {
-        setStatus(`Enviado para ${data.sent} pessoa(s).`);
+        setStatus(`Enfileirado para ${data.sent} pessoa(s). O bot envia aos poucos (~1s por pessoa).`);
         setMessage("");
       }
     } catch {
@@ -120,12 +125,83 @@ export default function DashboardPage() {
     setSending(false);
   }
 
+  // Puxa todos os membros com autorização salva para o servidor do link.
+  // O servidor processa em lotes; aqui repetimos até acabar (dá pra parar e continuar depois).
+  async function handlePull() {
+    if (!inviteLink.trim()) {
+      setPullStatus("Cole o link de convite do servidor de destino.");
+      return;
+    }
+    setPulling(true);
+    setPullStats(null);
+    stopPull.current = false;
+    setPullStatus("Conferindo o servidor...");
+
+    async function chamar(payload) {
+      const res = await fetch("/api/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Erro ao puxar membros.");
+      return data;
+    }
+
+    try {
+      const info = await chamar({ action: "resolve", invite: inviteLink });
+      const semAuth = info.total - info.authorized;
+      const ok = confirm(
+        `Puxar ${info.authorized} membro(s) para "${info.guildName}"?` +
+          (semAuth > 0
+            ? `\n\n${semAuth} membro(s) não têm autorização salva (verificaram antes) e serão pulados.`
+            : "")
+      );
+      if (!ok) {
+        setPullStatus("Cancelado.");
+        setPulling(false);
+        return;
+      }
+
+      const total = { processed: 0, joined: 0, already: 0, failed: 0, noToken: 0, banned: 0, revoked: 0, erros: {}, alvo: info.total, nome: info.guildName };
+      let cursor = 0;
+      while (!stopPull.current) {
+        setPullStatus(`Puxando para "${info.guildName}"...`);
+        const r = await chamar({ action: "run", guildId: info.guildId, cursor });
+        for (const k of ["processed", "joined", "already", "failed", "noToken", "banned", "revoked"]) total[k] += r[k] || 0;
+        for (const [motivo, n] of Object.entries(r.erros || {})) total.erros[motivo] = (total.erros[motivo] || 0) + n;
+        cursor = r.nextCursor;
+        setPullStats({ ...total });
+
+        if (r.fatal) {
+          setPullStatus(r.fatal);
+          setPulling(false);
+          return;
+        }
+        if (r.done) {
+          setPullStatus(`Concluído! Servidor "${info.guildName}".`);
+          setPulling(false);
+          return;
+        }
+        if (r.retryAfter) {
+          setPullStatus(`O Discord pediu uma pausa. Continuando em ${r.retryAfter}s...`);
+          await new Promise((res) => setTimeout(res, r.retryAfter * 1000 + 500));
+        }
+      }
+      setPullStatus("Parado. Clique em Puxar de novo para continuar (quem já entrou é pulado).");
+    } catch (err) {
+      setPullStatus(err.message || "Erro ao puxar membros.");
+    }
+    setPulling(false);
+  }
+
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
   const bannedIds = new Set(banned.map((b) => b.discord_id));
+  const authorizedCount = members.filter((m) => m.has_token).length;
   const activeCount = members.filter((m) => !m.excluded && !bannedIds.has(m.discord_id)).length;
 
   return (
@@ -231,6 +307,103 @@ export default function DashboardPage() {
             )}
           </section>
 
+          <section
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--line)",
+              borderRadius: 16,
+              padding: 20,
+              marginBottom: 28,
+            }}
+          >
+            <div style={{ fontSize: 13, color: "var(--grey)", marginBottom: 4 }}>
+              Puxar membros para outro servidor
+            </div>
+            <div style={{ fontSize: 12, color: "var(--grey)", marginBottom: 12, lineHeight: 1.5 }}>
+              {authorizedCount} de {members.length} membro(s) têm autorização salva. A Zoe precisa
+              estar no servidor de destino com a permissão de Criar convite.
+            </div>
+            <input
+              value={inviteLink}
+              onChange={(e) => setInviteLink(e.target.value)}
+              placeholder="https://discord.gg/seu-servidor"
+              disabled={pulling}
+              style={{
+                width: "100%",
+                padding: 14,
+                borderRadius: 12,
+                border: "1px solid var(--line)",
+                background: "#0a0a0a",
+                color: "var(--white)",
+                fontSize: 14,
+                fontFamily: "var(--sans)",
+                outline: "none",
+              }}
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button
+                onClick={handlePull}
+                disabled={pulling}
+                style={{
+                  padding: "13px 20px",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: "#fff",
+                  cursor: pulling ? "wait" : "pointer",
+                  background: pulling ? "#4a0a0a" : "linear-gradient(180deg, #ff3b3b, #e30613)",
+                  boxShadow: pulling ? "none" : "0 0 20px rgba(227,6,19,0.35)",
+                }}
+              >
+                {pulling ? "Puxando..." : "Puxar membros verificados"}
+              </button>
+              {pulling && (
+                <button
+                  onClick={() => (stopPull.current = true)}
+                  style={{
+                    padding: "13px 18px",
+                    borderRadius: 10,
+                    border: "1px solid var(--line)",
+                    background: "transparent",
+                    color: "var(--white)",
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  Parar
+                </button>
+              )}
+            </div>
+            {pullStats && (
+              <>
+                <div style={{ height: 6, borderRadius: 4, background: "#1a0a0a", marginTop: 14, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${Math.min(100, Math.round((pullStats.processed / Math.max(1, pullStats.alvo)) * 100))}%`,
+                      background: "var(--red)",
+                      transition: "width .3s",
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12.5, color: "var(--grey)", lineHeight: 1.7 }}>
+                  {pullStats.processed}/{pullStats.alvo} processados • {pullStats.joined} entraram •{" "}
+                  {pullStats.already} já estavam • {pullStats.failed} falharam • {pullStats.noToken} sem
+                  autorização • {pullStats.revoked} revogaram • {pullStats.banned} banidos (pulados)
+                  {Object.entries(pullStats.erros).map(([motivo, n]) => (
+                    <div key={motivo}>
+                      ↳ {n}x {motivo}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {pullStatus && (
+              <div style={{ marginTop: 12, fontSize: 13, color: "var(--grey)" }}>{pullStatus}</div>
+            )}
+          </section>
+
           <section>
             <div
               style={{
@@ -289,7 +462,7 @@ export default function DashboardPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {m.discord_id} • {m.webhook_url ? "webhook ok" : "sem webhook"}
+                        {m.discord_id} • {m.has_token ? "autorizado" : "sem autorização"}{m.has_webhook ? " • webhook" : ""}
                       </div>
                     </div>
 

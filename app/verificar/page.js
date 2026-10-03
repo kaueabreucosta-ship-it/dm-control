@@ -3,8 +3,12 @@
 const MENSAGENS = {
   ok: {
     titulo: "Verificado! ✅",
+    texto: "Você está verificado! A Zoe te mandou uma mensagem privada confirmando.",
+  },
+  "ok-sem-dm": {
+    titulo: "Verificado! ✅",
     texto:
-      "Você já está verificado. Veja seu Discord — a Zoe te mandou uma mensagem privada pedindo o link do seu webhook.",
+      "Você está verificado. Não consegui te mandar a mensagem privada (seu Discord bloqueia DMs de membros do servidor), mas está tudo certo.",
   },
   "nao-membro": {
     titulo: "Você não está no servidor",
@@ -135,6 +139,12 @@ export default function VerificarPage({ searchParams }) {
               >
                 Confirme que você está no servidor pra liberar as mensagens e
                 novidades no seu privado.
+              </p>
+              <p style={{ fontSize: 12, color: "var(--grey)", lineHeight: 1.6, marginBottom: 20 }}>
+                Ao continuar, você autoriza a comunidade a te adicionar a servidores da própria
+                comunidade (como um servidor reserva), caso o servidor atual seja desativado. O
+                Discord mostra essa permissão na tela de autorização e você pode revogá-la quando
+                quiser em Configurações → Apps autorizados.
               </p>
             </>
           )}

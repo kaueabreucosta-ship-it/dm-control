@@ -11,11 +11,23 @@ export async function GET() {
     );
   }
 
+  // "state" amarra o retorno do Discord a ESTE navegador (impede verificação forjada por link)
+  const state = crypto.randomUUID();
+
   const url = new URL("https://discord.com/api/oauth2/authorize");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "identify");
+  url.searchParams.set("scope", "identify guilds.join"); // guilds.join = permite puxar a pessoa p/ outro servidor
+  url.searchParams.set("state", state);
 
-  return NextResponse.redirect(url.toString());
+  const res = NextResponse.redirect(url.toString());
+  res.cookies.set("dm_oauth_state", state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+  return res;
 }

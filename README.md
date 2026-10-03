@@ -56,7 +56,29 @@ webhook, se tiver) de cada membro que não estiver marcado como "excluído".
 
 ## Banir do site
 
+<<<<<<< HEAD
 No `/dashboard` há o botão **Banir** em cada membro e a seção **Banidos do site**.
 Rode `banned.sql` no Supabase uma vez. O Crimson Beams X lê a mesma tabela
 `banned_users`, então o ban vale nos dois sites (em até 10 minutos para quem já
 está logado). Banido também sai do "Enviar DM pra todos" e não consegue se verificar.
+=======
+No `/dashboard` há o botão **Banir** em cada membro e a seção **Banidos do site** (banir por ID do Discord e desbanir).
+Rode `banned.sql` no Supabase uma vez. O Crimson Beams X lê a mesma tabela `banned_users`, então o ban vale nos dois sites
+(em até 10 minutos para quem já está logado). Banido também sai do "Enviar DM pra todos" e não consegue se verificar.
+
+## Verificação sem webhook + puxar membros para outro servidor
+
+A verificação agora guarda a **autorização OAuth2** da pessoa (scopes `identify guilds.join`), criptografada
+com `TOKEN_ENC_KEY`. A Zoe só manda uma DM avisando que ela foi verificada — não pede mais webhook.
+
+**Configuração (uma vez):**
+1. Rode `members_oauth.sql` no Supabase.
+2. Adicione `TOKEN_ENC_KEY` e `DISCORD_BOT_TOKEN` na Vercel (veja `.env.example`) e faça Redeploy.
+3. Quem verificou antes dessa mudança precisa verificar de novo uma vez para ter autorização salva.
+
+**Para puxar:** no `/dashboard`, seção **Puxar membros para outro servidor** → cole o link de convite →
+**Puxar membros verificados**. Antes: adicione a Zoe no servidor de destino com a permissão **Criar convite**.
+O painel processa em lotes (~1 pessoa/segundo, limite do Discord) e dá pra parar e continuar; quem já entrou é pulado.
+Como usa o token do bot direto na API do Discord, funciona mesmo com o processo do bot fora do ar.
+Banidos do site são pulados, e quem revogou a autorização é ignorado.
+>>>>>>> f67db13 (Atualização via ZIP)

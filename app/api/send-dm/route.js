@@ -7,9 +7,16 @@ export async function POST(req) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const { message } = await req.json();
-  if (!message || !message.trim()) {
+  const body = await req.json().catch(() => ({}));
+  const message = typeof body.message === "string" ? body.message : "";
+  if (!message.trim()) {
     return NextResponse.json({ error: "Mensagem vazia." }, { status: 400 });
+  }
+  if (message.length > 2000) {
+    return NextResponse.json(
+      { error: `Mensagem com ${message.length} caracteres. O Discord aceita no máximo 2000.` },
+      { status: 400 }
+    );
   }
 
   const botApiUrlRaw = process.env.BOT_API_URL;
@@ -44,7 +51,8 @@ export async function POST(req) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const { data: bannedRows } = await db.from("banned_users").select("discord_id");
+  const { data: bannedRows, error: banErr } = await db.from("banned_users").select("discord_id");
+  if (banErr) return NextResponse.json({ error: "Não consegui checar a lista de banidos. Envio cancelado por segurança." }, { status: 500 });
   const bannedIds = new Set((bannedRows || []).map((b) => b.discord_id));
   const targets = (allTargets || []).filter((t) => !bannedIds.has(t.discord_id));
   if (!targets || targets.length === 0) {
@@ -59,6 +67,7 @@ export async function POST(req) {
         "x-bot-secret": botSecret,
       },
       body: JSON.stringify({ message, targets }),
+      signal: AbortSignal.timeout(15000),
     });
 
     const data = await botRes.json().catch(() => ({}));
@@ -70,7 +79,8 @@ export async function POST(req) {
       );
     }
 
-    return NextResponse.json({ ok: true, sent: targets.length, botResponse: data });
+    // O bot responde na hora e envia em segundo plano (com pausa entre cada DM)
+    return NextResponse.json({ ok: true, sent: targets.length, queued: true, botResponse: data });
   } catch {
     return NextResponse.json(
       { error: "Não consegui falar com o bot. Ele está online?" },
