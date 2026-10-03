@@ -37,7 +37,7 @@ export default function VerificarPage({ searchParams }) {
 
   return (
     <>
-      <style jsx global>{`
+      <style>{`
         :root {
           --bg: #070707;
           --panel: #101010;
