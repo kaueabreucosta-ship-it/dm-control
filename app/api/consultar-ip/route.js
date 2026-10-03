@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { verifySessionValue, SESSION_COOKIE_NAME } from "../../../lib/auth";
 
 // Cache simples em memória por instância do servidor.
-// Em Vercel/serverless ele é reaproveitado enquanto a instância estiver quente.
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 const cache = globalThis.__ipLookupCache || new Map();
 globalThis.__ipLookupCache = cache;
@@ -12,12 +11,11 @@ globalThis.__ipLookupCache = cache;
 // Timeout máximo de cada chamada externa.
 const FETCH_TIMEOUT = 8000;
 
-// User-Agent identificando a aplicação, exigido pelo uso responsável do Nominatim.
+// User-Agent identificando a aplicação, conforme as boas práticas do Nominatim.
 const NOMINATIM_USER_AGENT = "DM-Control-IP-Lookup/1.0 (admin panel)";
 
 function isPrivateIPv4(ip) {
   const [a, b] = ip.split(".").map(Number);
-
   return (
     a === 10 ||
     a === 127 ||
@@ -30,17 +28,13 @@ function isPrivateIPv4(ip) {
 
 function isPrivateIPv6(ip) {
   const normalized = ip.toLowerCase().replace(/^\[|\]$/g, "");
-
-  // Loopback e endereço não especificado.
   if (normalized === "::1" || normalized === "::") return true;
 
-  // IPv4-mapped IPv6.
   if (normalized.startsWith("::ffff:")) {
     const mapped = normalized.slice(7);
     if (net.isIP(mapped) === 4) return isPrivateIPv4(mapped);
   }
 
-  // fc00::/7 (ULA) e fe80::/10 (link-local).
   const first = parseInt(normalized.split(":")[0] || "0", 16);
   return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
 }
@@ -65,7 +59,6 @@ function flagEmoji(countryCode) {
 }
 
 // Faz uma chamada HTTP com timeout independente.
-// Uma fonte que falhar não impede as outras.
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
@@ -76,27 +69,21 @@ async function fetchJson(url, options = {}) {
       signal: controller.signal,
       cache: "no-store",
     });
-
     const text = await response.text();
     let data = null;
-
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
       data = null;
     }
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return data;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Executa as consultas em paralelo quando não há dependência entre elas.
+// Geolocalização primária e fallback.
 async function lookupGeo(ip) {
   const fields =
     "status,message,continent,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query";
@@ -105,19 +92,11 @@ async function lookupGeo(ip) {
     const primary = await fetchJson(
       `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=${fields}`
     );
-
-    if (primary?.status === "success") {
-      return { data: primary, source: "ip-api" };
-    }
-  } catch {
-    // Fallback abaixo.
-  }
+    if (primary?.status === "success") return { data: primary, source: "ip-api" };
+  } catch {}
 
   try {
-    const fallback = await fetchJson(
-      `https://ipapi.co/${encodeURIComponent(ip)}/json/`
-    );
-
+    const fallback = await fetchJson(`https://ipapi.co/${encodeURIComponent(ip)}/json/`);
     if (fallback && !fallback.error) {
       return {
         data: {
@@ -142,24 +121,19 @@ async function lookupGeo(ip) {
         source: "ipapi.co",
       };
     }
-  } catch {
-    // Ambas falharam.
-  }
+  } catch {}
 
   return { data: null, source: null };
 }
 
+// Enriquecimento por CEP com fallback.
 async function lookupCep(cep) {
   if (!cep) return { data: null, source: null };
-
   const digits = String(cep).replace(/\D/g, "");
   if (!/^\d{8}$/.test(digits)) return { data: null, source: null };
 
   try {
-    const brasil = await fetchJson(
-      `https://brasilapi.com.br/api/cep/v1/${digits}`
-    );
-
+    const brasil = await fetchJson(`https://brasilapi.com.br/api/cep/v1/${digits}`);
     if (brasil) {
       return {
         data: {
@@ -171,15 +145,10 @@ async function lookupCep(cep) {
         source: "BrasilAPI",
       };
     }
-  } catch {
-    // Fallback abaixo.
-  }
+  } catch {}
 
   try {
-    const via = await fetchJson(
-      `https://viacep.com.br/ws/${digits}/json/`
-    );
-
+    const via = await fetchJson(`https://viacep.com.br/ws/${digits}/json/`);
     if (via && !via.erro) {
       return {
         data: {
@@ -191,13 +160,12 @@ async function lookupCep(cep) {
         source: "ViaCEP",
       };
     }
-  } catch {
-    // Ambas falharam.
-  }
+  } catch {}
 
   return { data: null, source: null };
 }
 
+// Geocodificação reversa. O número só é usado se a fonte realmente retornar house_number.
 async function reverseGeocode(lat, lon) {
   if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
     return { data: null, source: null };
@@ -233,19 +201,16 @@ async function reverseGeocode(lat, lon) {
   }
 }
 
+// Junta as fontes sem preencher dados inexistentes por inferência.
 function consolidate(ip, geo, cep, reverse) {
   const g = geo.data || {};
   const c = cep.data || {};
   const r = reverse.data || {};
 
-  const locationSource = geo.source || null;
-  const cepSource = cep.source || null;
-  const reverseSource = reverse.source || null;
-
   let enderecoSource = null;
-  if (cepSource && reverseSource) enderecoSource = `${cepSource} + ${reverseSource}`;
-  else if (cepSource) enderecoSource = cepSource;
-  else if (reverseSource) enderecoSource = reverseSource;
+  if (cep.source && reverse.source) enderecoSource = `${cep.source} + ${reverse.source}`;
+  else if (cep.source) enderecoSource = cep.source;
+  else if (reverse.source) enderecoSource = reverse.source;
 
   return {
     ip,
@@ -256,7 +221,7 @@ function consolidate(ip, geo, cep, reverse) {
       estado: g.regionName ?? null,
       cidade: g.city ?? null,
       cep: g.zip ?? null,
-      _fonte: locationSource,
+      _fonte: geo.source ?? null,
     },
     endereco: {
       rua_cep: c.street ?? null,
@@ -284,7 +249,7 @@ function consolidate(ip, geo, cep, reverse) {
 }
 
 export async function POST(request) {
-  // O endpoint fica restrito ao painel administrativo.
+  // O endpoint só pode ser usado por uma sessão administrativa válida.
   const session = cookies().get(SESSION_COOKIE_NAME)?.value;
   if (!(await verifySessionValue(session))) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -299,7 +264,7 @@ export async function POST(request) {
 
   const ip = cleanIP(body?.ip);
 
-  // Validação também no backend; nunca confiar apenas no frontend.
+  // Validação também no backend; o frontend não é uma barreira de segurança.
   if (!ip || !net.isIP(ip)) {
     return NextResponse.json(
       { error: "Informe um endereço IPv4 ou IPv6 válido." },
@@ -314,15 +279,13 @@ export async function POST(request) {
     );
   }
 
+  // Cache de 24h por IP.
   const cached = cache.get(ip);
-  if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json(cached.data);
-  }
+  if (cached && cached.expiresAt > Date.now()) return NextResponse.json(cached.data);
   cache.delete(ip);
 
-  // Primeiro obtemos a geolocalização. CEP e Nominatim dependem dela.
+  // CEP e reverse geocoding dependem da geolocalização inicial.
   const geo = await lookupGeo(ip);
-
   if (!geo.data) {
     return NextResponse.json(
       { error: "Não foi possível obter dados públicos de geolocalização para este IP." },
@@ -330,18 +293,14 @@ export async function POST(request) {
     );
   }
 
-  // CEP e reverse geocoding podem falhar independentemente.
+  // Uma falha em uma dessas fontes não impede a outra de retornar dados.
   const [cep, reverse] = await Promise.all([
     lookupCep(geo.data.zip),
     reverseGeocode(geo.data.lat, geo.data.lon),
   ]);
 
   const result = consolidate(ip, geo, cep, reverse);
-
-  cache.set(ip, {
-    data: result,
-    expiresAt: Date.now() + CACHE_TTL,
-  });
+  cache.set(ip, { data: result, expiresAt: Date.now() + CACHE_TTL });
 
   return NextResponse.json(result);
 }
